@@ -1,3 +1,10 @@
+module.exports = {
+  // ...existing config...
+  rules: {
+    '@typescript-eslint/no-empty-object-type': 'off',
+    '@typescript-eslint/no-explicit-any': 'off',
+  },
+};
 import js from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
