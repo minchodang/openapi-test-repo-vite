@@ -87,6 +87,59 @@ export type QueryOptionsFunction<
   }
 >;
 
+// Helper type to infer TPageParam type
+type InferPageParamType<T> = T extends { initialPageParam: infer P } ? P : unknown;
+
+export type InfiniteQueryOptionsFunction<
+  Paths extends Record<string, Record<HttpMethod, {}>>,
+  Media extends MediaType,
+> = <
+  Method extends HttpMethod,
+  Path extends PathsWithMethod<Paths, Method>,
+  Init extends MaybeOptionalInit<Paths[Path], Method>,
+  Response extends Required<FetchResponse<Paths[Path][Method], Init, Media>>,
+  Options extends Omit<
+    UseInfiniteQueryOptions<
+      Response['data'],
+      Response['error'],
+      InferSelectReturnType<InfiniteData<Response['data']>, Options['select']>,
+      QueryKey<Paths, Method, Path>,
+      InferPageParamType<Options>
+    >,
+    'queryKey' | 'queryFn'
+  > & {
+    pageParamName?: string;
+    initialPageParam: InferPageParamType<Options>;
+  },
+>(
+  method: Method,
+  path: Path,
+  init: InitWithUnknowns<Init>,
+  options: Options
+) => NoInfer<
+  Omit<
+    UseInfiniteQueryOptions<
+      Response['data'],
+      Response['error'],
+      InferSelectReturnType<InfiniteData<Response['data']>, Options['select']>,
+      QueryKey<Paths, Method, Path>,
+      InferPageParamType<Options>
+    >,
+    'queryFn'
+  > & {
+    queryFn: Exclude<
+      UseInfiniteQueryOptions<
+        Response['data'],
+        Response['error'],
+        InferSelectReturnType<InfiniteData<Response['data']>, Options['select']>,
+        QueryKey<Paths, Method, Path>,
+        InferPageParamType<Options>
+      >['queryFn'],
+      SkipToken | undefined
+    >;
+  }
+>;
+
 export type UseQueryMethod<
   Paths extends Record<string, Record<HttpMethod, {}>>,
   Media extends MediaType,
@@ -111,9 +164,6 @@ export type UseQueryMethod<
     ? [InitWithUnknowns<Init>?, Options?, QueryClient?]
     : [InitWithUnknowns<Init>, Options?, QueryClient?]
 ) => UseQueryResult<InferSelectReturnType<Response['data'], Options['select']>, Response['error']>;
-
-// Helper type to infer TPageParam type
-type InferPageParamType<T> = T extends { initialPageParam: infer P } ? P : unknown;
 
 export type UseInfiniteQueryMethod<
   Paths extends Record<string, Record<HttpMethod, {}>>,
@@ -196,6 +246,7 @@ export type UseMutationMethod<
 
 export interface OpenapiQueryClient<Paths extends {}, Media extends MediaType = MediaType> {
   queryOptions: QueryOptionsFunction<Paths, Media>;
+  infiniteQueryOptions: InfiniteQueryOptionsFunction<Paths, Media>;
   useQuery: UseQueryMethod<Paths, Media>;
   useSuspenseQuery: UseSuspenseQueryMethod<Paths, Media>;
   useInfiniteQuery: UseInfiniteQueryMethod<Paths, Media>;
@@ -249,8 +300,46 @@ export default function createClient<Paths extends {}, Media extends MediaType =
     ...options,
   });
 
+  const infiniteQueryOptions: InfiniteQueryOptionsFunction<Paths, Media> = (
+    method,
+    path,
+    init,
+    options
+  ) => {
+    const { pageParamName = 'cursor', initialPageParam, ...restOptions } = options;
+    const { queryKey } = queryOptions(method, path, init);
+
+    return {
+      queryKey,
+      initialPageParam,
+      queryFn: async ({ queryKey: [method, path, init], pageParam, signal }) => {
+        const mth = method.toUpperCase() as Uppercase<typeof method>;
+        const fn = client[mth] as ClientMethod<Paths, typeof method, Media>;
+        const mergedInit = {
+          ...init,
+          signal,
+          params: {
+            ...(init?.params || {}),
+            query: {
+              ...(init?.params as { query?: DefaultParamsOption })?.query,
+              [pageParamName]: pageParam,
+            },
+          },
+        };
+
+        const { data, error } = await fn(path, mergedInit as any);
+        if (error) {
+          throw error;
+        }
+        return data;
+      },
+      ...restOptions,
+    };
+  };
+
   return {
     queryOptions,
+    infiniteQueryOptions,
     useQuery: (method, path, ...[init, options, queryClient]) =>
       useQuery(
         queryOptions(method, path, init as InitWithUnknowns<typeof init>, options),
@@ -261,40 +350,8 @@ export default function createClient<Paths extends {}, Media extends MediaType =
         queryOptions(method, path, init as InitWithUnknowns<typeof init>, options),
         queryClient
       ),
-    useInfiniteQuery: (method, path, init, options, queryClient) => {
-      const { pageParamName = 'cursor', initialPageParam, ...restOptions } = options;
-      const { queryKey } = queryOptions(method, path, init);
-
-      return useInfiniteQuery(
-        {
-          queryKey,
-          initialPageParam,
-          queryFn: async ({ queryKey: [method, path, init], pageParam, signal }) => {
-            const mth = method.toUpperCase() as Uppercase<typeof method>;
-            const fn = client[mth] as ClientMethod<Paths, typeof method, Media>;
-            const mergedInit = {
-              ...init,
-              signal,
-              params: {
-                ...(init?.params || {}),
-                query: {
-                  ...(init?.params as { query?: DefaultParamsOption })?.query,
-                  [pageParamName]: pageParam,
-                },
-              },
-            };
-
-            const { data, error } = await fn(path, mergedInit as any);
-            if (error) {
-              throw error;
-            }
-            return data;
-          },
-          ...restOptions,
-        },
-        queryClient
-      );
-    },
+    useInfiniteQuery: (method, path, init, options, queryClient) =>
+      useInfiniteQuery(infiniteQueryOptions(method, path, init, options), queryClient),
     useMutation: (method, path, options, queryClient) =>
       useMutation(
         {
