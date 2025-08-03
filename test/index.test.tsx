@@ -12,9 +12,11 @@ import {
   useSuspenseQuery,
   skipToken,
   useInfiniteQuery,
+  useMutation,
 } from '@tanstack/react-query';
 import { Suspense, type ReactNode } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+import React from 'react';
 
 type minimalGetPaths = {
   // Without parameters.
@@ -72,6 +74,7 @@ describe('client', () => {
   it('generates all proper functions', () => {
     const fetchClient = createFetchClient<paths>({ baseUrl });
     const client = createClient<paths>(fetchClient);
+    expect(client).toHaveProperty('mutationOptions');
     expect(client).toHaveProperty('queryOptions');
     expect(client).toHaveProperty('useQuery');
     expect(client).toHaveProperty('useSuspenseQuery');
@@ -734,6 +737,184 @@ describe('client', () => {
       await act(() => queryClient.cancelQueries());
 
       expect(signalPassedToFetch?.aborted).toBeTruthy();
+    });
+  });
+  describe('mutationOptions', () => {
+    it('has correct parameter types', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      client.mutationOptions('put', '/comment');
+      // @ts-expect-error: Wrong method.
+      client.mutationOptions('get', '/comment');
+      // @ts-expect-error: Wrong path.
+      client.mutationOptions('put', '/commentX');
+      // @ts-expect-error: Missing required body param.
+      client.mutationOptions('post', '/blogposts/{post_id}/comment', {});
+    });
+
+    it('returns mutation options that can be passed to useMutation', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'put',
+        path: '/comment',
+        status: 200,
+        body: { message: 'Hello World' },
+      });
+
+      const options = client.mutationOptions('put', '/comment');
+
+      expect(options).toHaveProperty('mutationKey');
+      expect(options).toHaveProperty('mutationFn');
+      expect(Array.isArray(options.mutationKey)).toBe(true);
+      expectTypeOf(options.mutationFn).toBeFunction();
+
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      result.current.mutate({ body: { message: 'Hello World', replied_at: 123456789 } });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data?.message).toBe('Hello World');
+    });
+
+    it('returns mutation options that can resolve data correctly with mutateAsync', async () => {
+      const response = { message: 'Updated successfully' };
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'put',
+        path: '/comment',
+        status: 200,
+        body: response,
+      });
+
+      const options = client.mutationOptions('put', '/comment');
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      const data = await result.current.mutateAsync({
+        body: { message: 'Test message', replied_at: 123456789 },
+      });
+
+      expectTypeOf(data).toEqualTypeOf<{
+        message: string;
+      }>();
+
+      expect(data).toEqual(response);
+    });
+
+    it('returns mutation options that handle error responses correctly', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'put',
+        path: '/comment',
+        status: 500,
+        body: { code: 500, message: 'Internal Server Error' },
+      });
+
+      const options = client.mutationOptions('put', '/comment');
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      result.current.mutate({ body: { message: 'Test message', replied_at: 123456789 } });
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(result.current.error?.message).toBe('Internal Server Error');
+      expect(result.current.data).toBeUndefined();
+    });
+
+    it('returns mutation options with path parameters', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'put',
+        path: '/blogposts',
+        status: 201,
+        body: { status: 'Comment Created' },
+      });
+
+      const options = client.mutationOptions('put', '/blogposts');
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      result.current.mutate({
+        body: {
+          body: 'Post test',
+          title: 'Post Create',
+          publish_date: 3333333,
+        },
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data?.status).toBe('Comment Created');
+    });
+
+    it('returns mutation options that handle null response body', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'delete',
+        path: '/blogposts/:post_id',
+        status: 204,
+        body: null,
+      });
+
+      const options = client.mutationOptions('delete', '/blogposts/{post_id}');
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      result.current.mutate({
+        params: {
+          path: {
+            post_id: '1',
+          },
+        },
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.error).toBeNull();
+    });
+
+    it('returns mutation options that can be used with custom mutation options', async () => {
+      const fetchClient = createFetchClient<paths>({ baseUrl });
+      const client = createClient(fetchClient);
+
+      useMockRequestHandler({
+        baseUrl,
+        method: 'put',
+        path: '/comment',
+        status: 200,
+        body: { message: 'Success' },
+      });
+
+      const onSuccessSpy = vi.fn();
+      const onErrorSpy = vi.fn();
+
+      const options = {
+        ...client.mutationOptions('put', '/comment'),
+        onSuccess: onSuccessSpy,
+        onError: onErrorSpy,
+      };
+
+      const { result } = renderHook(() => useMutation(options), { wrapper });
+
+      result.current.mutate({ body: { message: 'Test', replied_at: 123456789 } });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(onSuccessSpy).toHaveBeenCalledWith(
+        { message: 'Success' },
+        { body: { message: 'Test', replied_at: 123456789 } },
+        undefined
+      );
+      expect(onErrorSpy).not.toHaveBeenCalled();
     });
   });
 
