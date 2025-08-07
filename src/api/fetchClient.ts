@@ -8,7 +8,7 @@ const fetchClient = createFetchClient<paths>({
 
 const $api = createClient(fetchClient);
 
-const infiniteOptions = $api.infiniteQueryOptions(
+export const infiniteOptions = $api.infiniteQueryOptions(
   'get',
   '/paginated-data',
   {
@@ -26,25 +26,38 @@ const infiniteOptions = $api.infiniteQueryOptions(
   }
 );
 
-const test2 = $api.useInfiniteQuery(
-  'get',
-  '/paginated-data',
-  {
-    params: {
-      query: {
-        limit: 3,
+export const useInfiniteQueryExample = () =>
+  $api.useInfiniteQuery(
+    'get',
+    '/paginated-data',
+    {
+      params: {
+        query: {
+          limit: 3,
+        },
       },
     },
-  },
-  {
-    getNextPageParam: () => {
-      return 2;
-    },
-    getPreviousPageParam: () => {
-      return 3;
-    },
-    initialPageParam: 3,
-  }
-);
+    {
+      getNextPageParam: () => {
+        return 2;
+      },
+      getPreviousPageParam: () => {
+        return 3;
+      },
+      initialPageParam: 3,
+    }
+  );
 
-
+export const useSuspenseInfiniteQueryExample = () =>
+  $api.useSuspenseInfiniteQuery(
+    'get',
+    '/paginated-data',
+    {
+      params: {
+        query: {
+          limit: 3,
+        },
+      },
+    },
+    { initialPageParam: 3, getNextPageParam: () => 3 }
+  );
