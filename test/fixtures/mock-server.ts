@@ -7,8 +7,8 @@ import {
   type HttpResponseResolver,
   type PathParams,
   type AsyncResponseResolverReturnType,
-} from "msw";
-import { setupServer } from "msw/node";
+} from 'msw';
+import { setupServer } from 'msw/node';
 
 /**
  * Mock server instance
@@ -18,7 +18,7 @@ export const server = setupServer();
 /**
  * Default baseUrl for tests
  */
-export const baseUrl = "https://api.example.com" as const;
+export const baseUrl = 'https://api.example.com' as const;
 
 /**
  * Test path helper, returns an absolute URL based on
@@ -41,7 +41,7 @@ export function toAbsoluteURL(path: string, base: string = baseUrl) {
   const baseUrlInstance = new URL(base);
 
   // prepend base url url pathname to path and ensure only one slash between the URL parts
-  const newPath = `${baseUrlInstance.pathname}/${path}`.replace(/\/+/g, "/");
+  const newPath = `${baseUrlInstance.pathname}/${path}`.replace(/\/+/g, '/');
 
   return new URL(newPath, baseUrlInstance).toString();
 }
@@ -90,7 +90,7 @@ export function useMockRequestHandler<
   status,
   handler,
 }: MockRequestHandlerOptions<Params, RequestBodyType, ResponseBodyType>) {
-  let requestUrl = "";
+  let requestUrl = '';
   let receivedRequest: StrictRequest<DefaultBodyType>;
   let receivedCookies: Record<string, string> = {};
 
@@ -110,7 +110,7 @@ export function useMockRequestHandler<
         status: status ?? 200,
         headers,
       }) as AsyncResponseResolverReturnType<ResponseBodyType>;
-    }),
+    })
   );
 
   return {

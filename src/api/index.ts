@@ -8,6 +8,8 @@ import {
   type UseInfiniteQueryResult,
   type UseSuspenseQueryOptions,
   type UseSuspenseQueryResult,
+  type UseSuspenseInfiniteQueryOptions,
+  type UseSuspenseInfiniteQueryResult,
   type QueryClient,
   type QueryFunctionContext,
   type SkipToken,
@@ -15,6 +17,7 @@ import {
   useQuery,
   useSuspenseQuery,
   useInfiniteQuery,
+  useSuspenseInfiniteQuery,
 } from '@tanstack/react-query';
 import type {
   ClientMethod,
@@ -42,10 +45,7 @@ export type QueryKey<
   Init = MaybeOptionalInit<Paths[Path], Method>,
 > = Init extends undefined ? readonly [Method, Path] : readonly [Method, Path, Init];
 
-export type MutationKey<
-  Method extends HttpMethod,
-  Path,
-> = readonly [Method, Path];
+export type MutationKey<Method extends HttpMethod, Path> = readonly [Method, Path];
 
 export type QueryOptionsFunction<
   Paths extends Record<string, Record<HttpMethod, {}>>,
@@ -109,10 +109,7 @@ export type MutationOptionsFunction<
   path: Path,
   options?: Options
 ) => NoInfer<
-  Omit<
-    UseMutationOptions<Response['data'], Response['error'], Init>,
-    'mutationFn'
-  > & {
+  Omit<UseMutationOptions<Response['data'], Response['error'], Init>, 'mutationFn'> & {
     mutationFn: Exclude<
       UseMutationOptions<Response['data'], Response['error'], Init>['mutationFn'],
       undefined
@@ -258,6 +255,38 @@ export type UseSuspenseQueryMethod<
   Response['error']
 >;
 
+export type UseSuspenseInfiniteQueryMethod<
+  Paths extends Record<string, Record<HttpMethod, {}>>,
+  Media extends MediaType,
+> = <
+  Method extends HttpMethod,
+  Path extends PathsWithMethod<Paths, Method>,
+  Init extends MaybeOptionalInit<Paths[Path], Method>,
+  Response extends Required<FetchResponse<Paths[Path][Method], Init, Media>>,
+  Options extends Omit<
+    UseSuspenseInfiniteQueryOptions<
+      Response['data'],
+      Response['error'],
+      InferSelectReturnType<InfiniteData<Response['data']>, Options['select']>,
+      QueryKey<Paths, Method, Path>,
+      InferPageParamType<Options>
+    >,
+    'queryKey' | 'queryFn'
+  > & {
+    pageParamName?: string;
+    initialPageParam: InferPageParamType<Options>;
+  },
+>(
+  method: Method,
+  url: Path,
+  init: InitWithUnknowns<Init>,
+  options: Options,
+  queryClient?: QueryClient
+) => UseSuspenseInfiniteQueryResult<
+  InferSelectReturnType<InfiniteData<Response['data']>, Options['select']>,
+  Response['error']
+>;
+
 export type UseMutationMethod<
   Paths extends Record<string, Record<HttpMethod, {}>>,
   Media extends MediaType,
@@ -284,13 +313,14 @@ export interface OpenapiQueryClient<Paths extends {}, Media extends MediaType = 
   useQuery: UseQueryMethod<Paths, Media>;
   useSuspenseQuery: UseSuspenseQueryMethod<Paths, Media>;
   useInfiniteQuery: UseInfiniteQueryMethod<Paths, Media>;
+  useSuspenseInfiniteQuery: UseSuspenseInfiniteQueryMethod<Paths, Media>;
   useMutation: UseMutationMethod<Paths, Media>;
 }
 
 export type MethodResponse<
   CreatedClient extends OpenapiQueryClient<any, any>,
   Method extends HttpMethod,
-  Path extends CreatedClient extends OpenapiQueryClient<infer Paths, infer _Media>
+  Path extends CreatedClient extends OpenapiQueryClient<infer Paths, any>
     ? PathsWithMethod<Paths, Method>
     : never,
   Options = object,
@@ -326,10 +356,7 @@ export default function createClient<Paths extends {}, Media extends MediaType =
     return data;
   };
 
-  const createMutationFn = <
-    Method extends HttpMethod,
-    Path extends PathsWithMethod<Paths, Method>
-  >(
+  const createMutationFn = <Method extends HttpMethod, Path extends PathsWithMethod<Paths, Method>>(
     method: Method,
     path: Path
   ) => {
@@ -412,6 +439,8 @@ export default function createClient<Paths extends {}, Media extends MediaType =
       ),
     useInfiniteQuery: (method, path, init, options, queryClient) =>
       useInfiniteQuery(infiniteQueryOptions(method, path, init, options), queryClient),
+    useSuspenseInfiniteQuery: (method, path, init, options, queryClient) =>
+      useSuspenseInfiniteQuery(infiniteQueryOptions(method, path, init, options), queryClient),
     useMutation: (method, path, options, queryClient) =>
       useMutation(
         {
